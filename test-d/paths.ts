@@ -119,6 +119,35 @@ expectType<'foo'>(recursion0);
 declare const recursion1: Paths<RecursiveFoo, {maxRecursionDepth: 1}>;
 expectType<'foo' | 'foo.foo'>(recursion1);
 
+// Self reference depth
+type CircularFoo = {foo: CircularFoo; a: {b: {c: {d: {e: {f: {g: string}}}}}}};
+
+// By default, the circular limit should be reasonably long
+type CircularFooDefault = Paths<CircularFoo>;
+// Default circular limit should be respected
+expectAssignable<CircularFooDefault>('foo.foo.foo.foo.foo.foo.foo.foo');
+expectAssignable<CircularFooDefault>('foo.foo.foo.foo.a.b.c.d.e.f.g');
+expectAssignable<CircularFooDefault>('foo.foo.foo.a.b.c.d.e');
+expectAssignable<CircularFooDefault>('foo.foo.a.b.c.d.e.f.g');
+expectAssignable<CircularFooDefault>('foo.a.b.c.d.e.f.g');
+
+type Circular0 = Paths<CircularFoo, {maxSelfReferenceDepth: 0}>;
+// Default recursion should not be affected
+expectAssignable<Circular0>('a.b.c.d.e.f.g');
+// Specified circular limit should be respected
+expectAssignable<Circular0>('foo');
+expectNotAssignable<Circular0>('foo.foo');
+expectNotAssignable<Circular0>('foo.a');
+
+type Circular1 = Paths<CircularFoo, {maxSelfReferenceDepth: 1}>;
+// Default recursion should not be affected
+expectAssignable<Circular1>('foo.a.b.c.d.e.f.g');
+expectAssignable<Circular1>('a.b.c.d.e.f.g');
+// Specified circular limit should be respected
+expectAssignable<Circular1>('foo.foo');
+expectNotAssignable<Circular1>('foo.foo.foo');
+expectNotAssignable<Circular1>('foo.foo.a');
+
 // Test a[0].b style
 type Object1 = {
 	arr: [{a: string}];
