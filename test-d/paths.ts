@@ -130,6 +130,7 @@ expectAssignable<CircularFooDefault>('foo.foo.foo.foo.a.b.c.d.e.f.g');
 expectAssignable<CircularFooDefault>('foo.foo.foo.a.b.c.d.e');
 expectAssignable<CircularFooDefault>('foo.foo.a.b.c.d.e.f.g');
 expectAssignable<CircularFooDefault>('foo.a.b.c.d.e.f.g');
+// ExpectAssignable<CircularFooDefault>('');
 
 type Circular0 = Paths<CircularFoo, {maxSelfReferenceDepth: 0}>;
 // Default recursion should not be affected
@@ -138,6 +139,7 @@ expectAssignable<Circular0>('a.b.c.d.e.f.g');
 expectAssignable<Circular0>('foo');
 expectNotAssignable<Circular0>('foo.foo');
 expectNotAssignable<Circular0>('foo.a');
+// ExpectAssignable<Circular0>('');
 
 type Circular1 = Paths<CircularFoo, {maxSelfReferenceDepth: 1}>;
 // Default recursion should not be affected
@@ -147,6 +149,11 @@ expectAssignable<Circular1>('a.b.c.d.e.f.g');
 expectAssignable<Circular1>('foo.foo');
 expectNotAssignable<Circular1>('foo.foo.foo');
 expectNotAssignable<Circular1>('foo.foo.a');
+// ExpectAssignable<Circular1>('');
+
+type CircularInternalFoo = {a: {b: {c: {d: {e: {f: {g: string}}}}}}; internal: {foo: CircularInternalFoo}};
+type CircularInternal0 = Paths<CircularInternalFoo, {maxSelfReferenceDepth: 0}>;
+expectAssignable<CircularInternal0>('a');
 
 // Test a[0].b style
 type Object1 = {

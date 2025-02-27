@@ -1,9 +1,13 @@
+import type {Extends} from 'expect-type';
 import type {StaticPartOfArray, VariablePartOfArray, NonRecursiveType, ToString, IsNumberLike} from './internal';
 import type {EmptyObject} from './empty-object';
 import type {IsAny} from './is-any';
 import type {UnknownArray} from './unknown-array';
 import type {Subtract} from './subtract';
+import type {Sum} from './sum';
+// Import type {Add} from './ad';
 import type {GreaterThan} from './greater-than';
+import type {LessThan} from './less-than';
 
 /**
 Paths options.
@@ -197,26 +201,55 @@ export type Paths<T, Options extends PathsOptions = {}> = _Paths<T, {
 	depth: Options['depth'] extends number ? Options['depth'] : DefaultPathsOptions['depth'];
 }>;
 
-type _Paths<T, Options extends Required<PathsOptions>> =
+// Type _Paths<T, Options extends Required<PathsOptions>, Seen = never> =
+// 	T extends NonRecursiveType | ReadonlyMap<unknown, unknown> | ReadonlySet<unknown>
+// 		? never
+// 		: Extends<Seen, T> extends true & LessThan<Sum<Options['maxSelfReferenceDepth'], 1>, 1>
+// 			? never
+// 			: IsAny<T> extends true
+// 				? never
+// 				: T extends UnknownArray
+// 					? number extends T['length']
+// 					// We need to handle the fixed and non-fixed index part of the array separately.
+// 						? InternalPaths<StaticPartOfArray<T>, Options, Seen | T>
+// 						| InternalPaths<Array<VariablePartOfArray<T>[number]>, Options, Seen | T>
+// 						: InternalPaths<T, Options, Seen | T>
+// 					: T extends object
+// 						? InternalPaths<T, Options, Seen | T>
+// 						: never;
+
+type _Paths<T, Options extends Required<PathsOptions>, Seen = never> =
 	T extends NonRecursiveType | ReadonlyMap<unknown, unknown> | ReadonlySet<unknown>
 		? never
 		: IsAny<T> extends true
 			? never
-			: T extends UnknownArray
-				? number extends T['length']
-					// We need to handle the fixed and non-fixed index part of the array separately.
-					? InternalPaths<StaticPartOfArray<T>, Options>
-					| InternalPaths<Array<VariablePartOfArray<T>[number]>, Options>
-					: InternalPaths<T, Options>
-				: T extends object
-					? InternalPaths<T, Options>
-					: never;
+			: Extends<Seen, T> extends true
+				? GreaterThan<Options['maxSelfReferenceDepth'], 0> extends true
+					? T extends UnknownArray
+						? number extends T['length']
+							// We need to handle the fixed and non-fixed index part of the array separately.
+							? InternalPaths<StaticPartOfArray<T>, Options, Seen | T>
+							| InternalPaths<Array<VariablePartOfArray<T>[number]>, Options, Seen | T>
+							: InternalPaths<T, Options, Seen | T>
+						: T extends object
+							? InternalPaths<T, Options, Seen | T>
+							: never
+					: never
+				: T extends UnknownArray
+					? number extends T['length']
+						// We need to handle the fixed and non-fixed index part of the array separately.
+						? InternalPaths<StaticPartOfArray<T>, Options, Seen | T>
+						| InternalPaths<Array<VariablePartOfArray<T>[number]>, Options, Seen | T>
+						: InternalPaths<T, Options, Seen | T>
+					: T extends object
+						? InternalPaths<T, Options, Seen | T>
+						: never;
 
 type InternalPaths<
 	T,
 	Options extends Required<PathsOptions>,
+	Seen = never,
 	MaxDepth extends number = Options['maxRecursionDepth'],
-	MaxSelfReferenceDepth extends number = Options['maxSelfReferenceDepth'],
 > = Required<T> extends infer T
 	? T extends EmptyObject | readonly []
 		? never
@@ -231,12 +264,12 @@ type InternalPaths<
 						: never
 						|
 						Options['bracketNotation'] extends false
-						// If `Key` is a number, return `Key | `${Key}``, because both `array[0]` and `array['0']` work.
+							// If `Key` is a number, return `Key | `${Key}``, because both `array[0]` and `array['0']` work.
 							? (Key | ToString<Key>)
 							: never
 				) extends infer TranformedKey extends string | number ?
-				// 1. If style is 'a[0].b' and 'Key' is a numberlike value like 3 or '3', transform 'Key' to `[${Key}]`, else to `${Key}` | Key
-				// 2. If style is 'a.0.b', transform 'Key' to `${Key}` | Key
+					// 1. If style is 'a[0].b' and 'Key' is a numberlike value like 3 or '3', transform 'Key' to `[${Key}]`, else to `${Key}` | Key
+					// 2. If style is 'a.0.b', transform 'Key' to `${Key}` | Key
 					| ((Options['leavesOnly'] extends true
 						? MaxDepth extends 0
 							? TranformedKey
@@ -254,11 +287,33 @@ type InternalPaths<
 					| (
 						// Recursively generate paths for the current key
 						GreaterThan<MaxDepth, 0> extends true // Limit the depth to prevent infinite recursion
-							? T[Key] extends T
-								? GreaterThan<MaxSelfReferenceDepth, 0> extends true
-									? InternalSubPaths<T[Key], Options, TranformedKey, Subtract<MaxSelfReferenceDepth, 1>>
+							? _Paths<T[Key], {
+								bracketNotation: Options['bracketNotation'];
+								maxRecursionDepth: Subtract<Options['maxRecursionDepth'], 1>;
+								maxSelfReferenceDepth: Seen extends T ? Subtract<Options['maxSelfReferenceDepth'], 1> : Options['maxSelfReferenceDepth'];
+								leavesOnly: Options['leavesOnly'];
+								depth: Options['depth'] extends infer Depth extends number // For distributing `Options['depth']`
+									? Depth extends 0 // Don't subtract further if `Depth` has reached `0`
+										? never
+										: ToString<Depth> extends `-${number}` // Don't subtract if `Depth` is -ve
+											? never
+											: Subtract<Options['depth'], 1> // If `Subtract` supported -ve numbers, then `depth` could have simply been `Subtract<Options['depth'], 1>`
+									: never; // Should never happen
+							}, Seen> extends infer SubPath
+								? SubPath extends string | number
+									? (
+										Options['bracketNotation'] extends true
+											? SubPath extends `[${any}]` | `[${any}]${string}`
+												? `${TranformedKey}${SubPath}` // If next node is number key like `[3]`, no need to add `.` before it.
+												: `${TranformedKey}.${SubPath}`
+											: never
+									) | (
+										Options['bracketNotation'] extends false
+											? `${TranformedKey}.${SubPath}`
+											: never
+									)
 									: never
-								: InternalSubPaths<T[Key], Options, TranformedKey, MaxSelfReferenceDepth>
+								: never
 							: never
 					)
 					: never
@@ -266,37 +321,37 @@ type InternalPaths<
 		}[keyof T & (T extends UnknownArray ? number : unknown)]
 	: never;
 
-type InternalSubPaths<
-	T,
-	Options extends Required<PathsOptions>,
-	TranformedKey extends string | number,
-	MaxSelfReferenceDepth extends number,
-> = _Paths<
-T,
-{
-	bracketNotation: Options['bracketNotation'];
-	maxRecursionDepth: Subtract<Options['maxRecursionDepth'], 1>;
-	maxSelfReferenceDepth: MaxSelfReferenceDepth;
-	leavesOnly: Options['leavesOnly'];
-	depth: Options['depth'] extends infer Depth extends number // For distributing `Options['depth']`
-		? Depth extends 0 // Don't subtract further if `Depth` has reached `0`
-			? never
-			: ToString<Depth> extends `-${number}` // Don't subtract if `Depth` is -ve
-				? never
-				: Subtract<Options['depth'], 1> // If `Subtract` supported -ve numbers, then `depth` could have simply been `Subtract<Options['depth'], 1>`
-		: never; // Should never happen
-}> extends infer SubPath
-	? SubPath extends string | number
-		? (
-			Options['bracketNotation'] extends true
-				? SubPath extends `[${any}]` | `[${any}]${string}`
-					? `${TranformedKey}${SubPath}` // If next node is number key like `[3]`, no need to add `.` before it.
-					: `${TranformedKey}.${SubPath}`
-				: never
-		) | (
-			Options['bracketNotation'] extends false
-				? `${TranformedKey}.${SubPath}`
-				: never
-		)
-		: never
-	: never;
+// Type InternalSubPaths<
+// 	T,
+// 	Options extends Required<PathsOptions>,
+// 	TranformedKey extends string | number,
+// 	MaxSelfReferenceDepth extends number,
+// > = _Paths<
+// T,
+// {
+// 	bracketNotation: Options['bracketNotation'];
+// 	maxRecursionDepth: Subtract<Options['maxRecursionDepth'], 1>;
+// 	maxSelfReferenceDepth: MaxSelfReferenceDepth;
+// 	leavesOnly: Options['leavesOnly'];
+// 	depth: Options['depth'] extends infer Depth extends number // For distributing `Options['depth']`
+// 		? Depth extends 0 // Don't subtract further if `Depth` has reached `0`
+// 			? never
+// 			: ToString<Depth> extends `-${number}` // Don't subtract if `Depth` is -ve
+// 				? never
+// 				: Subtract<Options['depth'], 1> // If `Subtract` supported -ve numbers, then `depth` could have simply been `Subtract<Options['depth'], 1>`
+// 		: never; // Should never happen
+// }> extends infer SubPath
+// 	? SubPath extends string | number
+// 		? (
+// 			Options['bracketNotation'] extends true
+// 				? SubPath extends `[${any}]` | `[${any}]${string}`
+// 					? `${TranformedKey}${SubPath}` // If next node is number key like `[3]`, no need to add `.` before it.
+// 					: `${TranformedKey}.${SubPath}`
+// 				: never
+// 		) | (
+// 			Options['bracketNotation'] extends false
+// 				? `${TranformedKey}.${SubPath}`
+// 				: never
+// 		)
+// 		: never
+// 	: never;
